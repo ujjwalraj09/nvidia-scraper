@@ -1,7 +1,7 @@
 import os
 import json
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 import uvicorn
 
 app = FastAPI()
@@ -12,26 +12,33 @@ def load_json():
         data = json.load(f)
     return data
 
-class CORSMiddleware:
-    def __init__(self, app):
-        self.app = app
+ALLOWED_ORIGINS = [
+    "http://localhost:8000",
+    "http://127.0.0.1:8000"
+]
 
-    async def __call__(self, scope, receive, send):
-        if scope['type'] == 'http':
-            request = Request(scope)
-            response = await self.app(request)
-            response.headers['Access-Control-Allow-Origin'] = '*'  # Replace with specific origin in production
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = '*'
-            return response
-        else:
-            await self.app(scope, receive, send)
+@app.middleware("http")
+async def add_cors_headers(request: Request, call_next):
+    origin = request.headers.get('origin')
+    if request.method == "OPTIONS":
+        response = PlainTextResponse()
+        if origin in ALLOWED_ORIGINS:
+            response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = '*'
+        return response
+    response = await call_next(request)
+    if origin in ALLOWED_ORIGINS:
+        response.headers['Access-Control-Allow-Origin'] = origin
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = '*'
+    return response
 
 @app.get("/gpu-data")
 async def get_gpu_data():
     try:
         data = load_json()
-        return data
+        return JSONResponse(content=data)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="JSON file not found")
 
@@ -40,5 +47,5 @@ async def get_index():
     return FileResponse('index.html')
 
 if __name__ == "__main__":
-    app.add_middleware(CORSMiddleware)
     uvicorn.run(app, host="127.0.0.1", port=8000)
+
